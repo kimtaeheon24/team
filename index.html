@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>태헌님의 맛집 지도</title>
+    <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=008785773c36ce63a3340655b913ab62&libraries=services&autoload=false"></script>
+    <script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6.3.7/dist/amazon-cognito-identity.min.js"></script>
+
+    <style>
+        body { font-family: 'Pretendard', sans-serif; padding: 20px; max-width: 900px; margin: 0 auto; background-color: #f5f5f5; }
+        #map { width: 100%; height: 450px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .search-container { display: flex; gap: 10px; margin-bottom: 10px; }
+        input { flex: 1; padding: 12px; border: 1px solid #ddd; border-radius: 8px; }
+        button { padding: 12px 20px; background-color: #fee500; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
+        #placesList { max-height: 150px; overflow-y: auto; background: white; border-radius: 8px; margin-bottom: 15px; padding: 0; border: 1px solid #eee; }
+        #placesList li { list-style: none; padding: 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; }
+        
+        .detail-box { background: white; padding: 20px; border-radius: 12px; margin-top: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .stats-row { display: flex; gap: 20px; margin: 15px 0; padding: 10px; background: #fff9c4; border-radius: 8px; font-weight: bold; align-items: center; }
+        .review-input-row { display: flex; gap: 10px; margin-top: 15px; }
+        ul#reviewList { list-style: none; padding: 0; margin-top: 15px; }
+        ul#reviewList li { background: #fff; padding: 15px; margin-bottom: 8px; border-radius: 8px; border-left: 5px solid #fee500; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    </style> 
+</head>
+
+<body>
+    <div id="auth-bar" style="background: #eee; padding: 10px; margin-bottom: 10px; border-radius: 8px; display: flex; justify-content: space-between;">
+        <span id="user-status">로그인 확인 중...</span>
+        <div>
+            <button id="loginBtn" onclick="location.href='https://ap-northeast-2mgf2wnmpr.auth.ap-northeast-2.amazoncognito.com/login?client_id=78d2qsb0hetu4o0bpdqp4ltke1&response_type=token&scope=email+openid+profile&redirect_uri=https%3A%2F%2Fd21v20pgzmqw2r.cloudfront.net%2F'">로그인</button>
+            <button id="logoutBtn" onclick="logout()" style="display:none;">로그아웃</button>
+        </div>
+    </div>
+
+    <h1>📍 맛집 지도</h1>
+
+    <div class="search-container">
+        <input type="text" id="keyword" placeholder="장소 검색 (예: 강남역 맛집)">
+        <button onclick="searchPlaces()">🔍 검색</button>
+    </div>
+
+    <ul id="placesList"></ul>
+    <div id="map"></div>
+
+    <div class="detail-box" id="detailSection">
+        <h2 id="placeTitle">💡 장소를 선택해 주세요</h2>
+        
+        <div class="stats-row">
+            <span>⭐ 별점: <span id="avgRating">0.0</span></span>
+            <span>💬 리뷰: <span id="reviewCount">0</span>개</span>
+            <span>❤️ 찜: <span id="bookmarkCount">0</span>회</span>
+            <button id="mainBookmarkBtn" onclick="mainToggleBookmark()" style="padding: 5px 15px; font-size: 12px; background: #ff5252; color: white; display:none;">찜하기</button>
+        </div>
+
+        <div class="review-input-row">
+            <input type="text" id="content" placeholder="리뷰 내용을 입력하세요">
+            <input type="number" id="rating" placeholder="별점(1-5)" min="1" max="5" style="width: 80px;">
+            <button onclick="submitReview()" style="background: #4CAF50; color: white;">리뷰 등록</button>
+        </div>
+
+        <ul id="reviewList"><li>아직 선택된 장소가 없습니다.</li></ul>
+    </div>
+
+    <script>
+        const BASE_URL = "https://xebqkczymj.execute-api.ap-northeast-2.amazonaws.com/prod";
+        const RESTAURANT_API_URL = `${BASE_URL}/restaurants`;
+        const REVIEWS_API_URL = `${BASE_URL}/reviews`;
+        const BOOKMARK_API_URL = `${BASE_URL}/bookmarks`;
+        
+        const POOL_DATA = {
+            UserPoolId: 'ap-northeast-2_MGf2wnMpR',
+            ClientId: '78d2qsb0hetu4o0bpdqp4ltke1'
+        };
+        const userPool = new AmazonCognitoIdentity.CognitoUserPool(POOL_DATA);
+
+        window.onload = function() {
+            checkAuth();
+        };
+
+        // 토큰에서 정보를 파싱하는 공통 함수
+        function parseJwt(token) {
+            try {
+                const base64Url = token.split('.')[1];
+                const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+                const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+                    return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+                }).join(''));
+                return JSON.parse(jsonPayload);
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function checkAuth() {
+            const statusEl = document.getElementById('user-status');
+            const loginBtn = document.getElementById('loginBtn');
+            const logoutBtn = document.getElementById('logoutBtn');
+
+            // 1. URL 해시에서 토큰 확인 (로그인 직후)
+            const hash = window.location.hash;
+            if (hash && hash.includes('id_token=')) {
+                const params = new URLSearchParams(hash.substring(1));
+                const idToken = params.get('id_token');
+                if (idToken) {
+                    const decoded = parseJwt(idToken);
+                    if (decoded) {
+                        // 이메일을 최우선으로, 없으면 username을 가져옵니다.
+                        const displayId = decoded['email'] || decoded['cognito:username'] || "유저";
+                        statusEl.innerText = `✅ ${displayId}님 환영합니다!`;
+                        loginBtn.style.display = 'none';
+                        logoutBtn.style.display = 'inline-block';
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                        return;
+                    }
+                }
+            }
+
+            // 2. 브라우저 세션에서 유저 확인 (페이지 새로고침 시)
+            const cognitoUser = userPool.getCurrentUser();
+            if (cognitoUser != null) {
+                cognitoUser.getSession((err, session) => {
+                    if (err || !session.isValid()) {
+                        statusEl.innerText = "로그인이 필요합니다.";
+                        return;
+                    }
+                    const idToken = session.getIdToken().getJwtToken();
+                    const decoded = parseJwt(idToken);
+                    const displayId = decoded['email'] || decoded['cognito:username'] || cognitoUser.username;
+                    
+                    statusEl.innerText = `✅ ${displayId}님 환영합니다!`;
+                    loginBtn.style.display = 'none';
+                    logoutBtn.style.display = 'inline-block';
+                });
+            } else {
+                statusEl.innerText = "로그인이 필요합니다.";
+            }
+        }
+
+        function logout() {
+            const cognitoUser = userPool.getCurrentUser();
+            if (cognitoUser) {
+                cognitoUser.signOut();
+                alert("로그아웃 되었습니다.");
+                location.reload();
+            }
+        }
+
+        function getUserId() {
+            // 상단바에 표시된 아이디(이메일)를 그대로 낚아채서 람다로 보냅니다.
+            const statusText = document.getElementById('user-status').innerText;
+            if (statusText.includes('✅')) {
+                return statusText.replace('✅ ', '').replace('님 환영합니다!', '').trim();
+            }
+            return "guest_user";
+        }
+
+        let map, ps, infowindow;
+        let currentPlace = null;
+
+        kakao.maps.load(() => {
+            const container = document.getElementById('map');
+            map = new kakao.maps.Map(container, { center: new kakao.maps.LatLng(37.5665, 126.9780), level: 3 });
+            ps = new kakao.maps.services.Places(); 
+            infowindow = new kakao.maps.InfoWindow({ zIndex: 1 });
+            kakao.maps.event.addListener(map, 'click', () => infowindow.close());
+            displayMarkers();
+        });
+
+        function searchPlaces() {
+            const keyword = document.getElementById('keyword').value;
+            if (!keyword.trim()) return alert('검색어를 입력하세요!');
+            ps.keywordSearch(keyword, (data, status) => {
+                if (status === kakao.maps.services.Status.OK) {
+                    const listEl = document.getElementById('placesList');
+                    listEl.innerHTML = ''; 
+                    const bounds = new kakao.maps.LatLngBounds();
+                    data.forEach(place => {
+                        const li = document.createElement('li');
+                        li.innerHTML = `<strong>${place.place_name}</strong><button onclick="selectPlace('${place.id}', '${place.place_name}', ${place.y}, ${place.x})">상세보기</button>`;
+                        listEl.appendChild(li);
+                        const marker = new kakao.maps.Marker({ map: map, position: new kakao.maps.LatLng(place.y, place.x) });
+                        kakao.maps.event.addListener(marker, 'click', () => openInfoWindow(marker, place.id, place.place_name, place.y, place.x));
+                        bounds.extend(new kakao.maps.LatLng(place.y, place.x));
+                    });
+                    map.setBounds(bounds);
+                }
+            });
+        }
+
+        async function displayMarkers() {
+            try {
+                const res = await fetch(RESTAURANT_API_URL);
+                const data = await res.json();
+                if (Array.isArray(data)) {
+                    data.forEach(place => {
+                        const marker = new kakao.maps.Marker({ map: map, position: new kakao.maps.LatLng(place.lat, place.lng) });
+                        kakao.maps.event.addListener(marker, 'click', () => openInfoWindow(marker, place.place_id, place.name, place.lat, place.lng));
+                    });
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        function openInfoWindow(marker, id, name, lat, lng) {
+            infowindow.setContent(`<div style="padding:10px;text-align:center;"><strong>${name}</strong><br><button onclick="selectPlace('${id}', '${name}', ${lat}, ${lng})" style="margin-top:5px;">상세보기</button></div>`);
+            infowindow.open(map, marker);
+        }
+
+        async function selectPlace(id, name, lat, lng) {
+            currentPlace = { id, name, lat, lng };
+            document.getElementById('placeTitle').innerText = `📍 ${name}`;
+            document.getElementById('mainBookmarkBtn').style.display = "inline-block";
+            infowindow.close();
+            await loadReviews(id);
+            await loadBookmarksCount(id);
+        }
+
+        async function loadReviews(placeId) {
+            try {
+                const res = await fetch(`${REVIEWS_API_URL}?place_id=${placeId}`);
+                const data = await res.json();
+                const list = document.getElementById("reviewList");
+                
+                // 데이터가 배열이 아닌 경우(에러 발생 시) 예외 처리
+                if (!Array.isArray(data)) {
+                    list.innerHTML = "<li>리뷰를 불러오는 중 오류가 발생했습니다.</li>";
+                    return;
+                }
+
+                list.innerHTML = data.length ? "" : "<li>리뷰가 없습니다. 첫 리뷰를 남겨주세요!</li>";
+                
+                let totalRating = 0;
+                data.forEach(item => {
+                    totalRating += Number(item.rating);
+                    const li = document.createElement("li");
+                    li.innerHTML = `<strong>${item.content}</strong> (⭐${item.rating})`;
+                    list.appendChild(li);
+                });
+                document.getElementById('reviewCount').innerText = data.length;
+                document.getElementById('avgRating').innerText = data.length ? (totalRating / data.length).toFixed(1) : "0.0";
+            } catch (e) { console.error(e); }
+        }
+
+        async function loadBookmarksCount(placeId) {
+            try {
+                const res = await fetch(`${BOOKMARK_API_URL}?place_id=${placeId}`);
+                const data = await res.json();
+                document.getElementById('bookmarkCount').innerText = Array.isArray(data) ? data.length : 0;
+            } catch (e) { document.getElementById('bookmarkCount').innerText = "0"; }
+        }
+
+        async function mainToggleBookmark() {
+            if (!currentPlace) return;
+            const userId = getUserId();
+            
+            if (userId === "guest_user") {
+                return alert("로그인 후 이용 가능합니다!");
+            }
+
+            try {
+                const response = await fetch(BOOKMARK_API_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        place_id: String(currentPlace.id),
+                        place_name: currentPlace.name,
+                        userId: userId 
+                    })
+                });
+
+                const result = await response.json();
+                if (response.ok) {
+                    alert(`${result.status === 'added' ? '❤️' : '💔'} [${userId}]님 처리되었습니다.`);
+                    loadBookmarksCount(currentPlace.id);
+                }
+            } catch (e) { alert("통신 에러가 발생했습니다."); }
+        }
+
+        async function submitReview() {
+            if (!currentPlace) return alert("장소를 선택해 주세요!");
+            const userId = getUserId();
+            
+            if (userId === "guest_user") {
+                return alert("로그인 후 이용 가능합니다.");
+            }
+
+            const content = document.getElementById('content').value;
+            const rating = document.getElementById('rating').value;
+            if (!content || !rating) return alert("내용을 입력하세요!");
+
+            try {
+                const response = await fetch(REVIEWS_API_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ 
+                        place_id: String(currentPlace.id), 
+                        name: currentPlace.name, 
+                        lat: String(currentPlace.lat), 
+                        lng: String(currentPlace.lng), 
+                        content, 
+                        rating: Number(rating), 
+                        userId: userId 
+                    })
+                });
+                if (response.ok) {
+                    alert("리뷰가 등록되었습니다.");
+                    document.getElementById('content').value = "";
+                    document.getElementById('rating').value = "";
+                    loadReviews(currentPlace.id);
+                } else {
+                    alert("리뷰 등록에 실패했습니다. (서버 에러)");
+                }
+            } catch (e) { alert("통신 에러가 발생했습니다."); }
+        }
+    </script>
+</body>
+</html>
