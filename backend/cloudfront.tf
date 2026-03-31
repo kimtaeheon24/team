@@ -22,7 +22,7 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
   origin {
     domain_name = "${aws_api_gateway_rest_api.map_api.id}.execute-api.ap-northeast-2.amazonaws.com"
     origin_id   = "APIGatewayOrigin"
-    origin_path = "/prod"
+    origin_path = ""
 
     custom_origin_config {
       http_port              = 80

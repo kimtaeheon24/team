@@ -4,49 +4,89 @@ resource "aws_api_gateway_rest_api" "map_api" {
   description = "Restaurant Map Service API with CORS"
 }
 
-# 2. 리소스 생성 (경로)
-resource "aws_api_gateway_resource" "restaurants" {
+# 1. /api 리소스 생성
+resource "aws_api_gateway_resource" "api_root" {
   rest_api_id = aws_api_gateway_rest_api.map_api.id
   parent_id   = aws_api_gateway_rest_api.map_api.root_resource_id
+  path_part   = "api" # 여기서 /api 경로가 생깁니다.
+}
+
+# 2. 기존 리소스들의 parent_id를 위 api_root의 id로 변경
+resource "aws_api_gateway_resource" "restaurants" {
+  rest_api_id = aws_api_gateway_rest_api.map_api.id
+  parent_id   = aws_api_gateway_resource.api_root.id # root_resource_id 대신 이걸로!
   path_part   = "restaurants"
 }
 
 resource "aws_api_gateway_resource" "bookmarks" {
   rest_api_id = aws_api_gateway_rest_api.map_api.id
-  parent_id   = aws_api_gateway_rest_api.map_api.root_resource_id
+  parent_id   = aws_api_gateway_resource.api_root.id
   path_part   = "bookmarks"
 }
 
 resource "aws_api_gateway_resource" "reviews" {
   rest_api_id = aws_api_gateway_rest_api.map_api.id
-  parent_id   = aws_api_gateway_rest_api.map_api.root_resource_id
+  parent_id   = aws_api_gateway_resource.api_root.id
   path_part   = "reviews"
 }
 
-# 3. CORS 설정을 위한 재사용 모듈 (공통 설정)
-# 각 리소스마다 OPTIONS 메서드를 추가하여 브라우저의 사전 검사를 통과시킵니다.
-module "cors" {
-  source = "github.com/squidfunk/terraform-aws-api-gateway-enable-cors"
-  
-  for_each = {
-    "res" : aws_api_gateway_resource.restaurants.id,
-    "book" : aws_api_gateway_resource.bookmarks.id,
-    "rev" : aws_api_gateway_resource.reviews.id
-  }
-
-  api_id          = aws_api_gateway_rest_api.map_api.id
-  api_resource_id = each.value
+# 3. CORS 설정을 위한 OPTIONS 메서드 추가 및 Mock 통합 설정
+resource "aws_api_gateway_method" "options_restaurants" {
+  rest_api_id   = aws_api_gateway_rest_api.map_api.id
+  resource_id   = aws_api_gateway_resource.restaurants.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
 }
 
-# 4. 개별 메서드 및 람다 통합
+resource "aws_api_gateway_integration" "options_restaurants_int" {
+  rest_api_id             = aws_api_gateway_rest_api.map_api.id
+  resource_id             = aws_api_gateway_resource.restaurants.id
+  http_method             = aws_api_gateway_method.options_restaurants.http_method
+  integration_http_method = "ANY"
+  type                    = "MOCK"
+}
+
+resource "aws_api_gateway_method_response" "options_restaurants_method_response" {
+  rest_api_id = aws_api_gateway_rest_api.map_api.id
+  resource_id = aws_api_gateway_resource.restaurants.id
+  http_method = aws_api_gateway_method.options_restaurants.http_method
+  status_code = "200"
+
+  response_models = {
+    "application/json" = "Empty"
+  }
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin"  = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Credentials" = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "options_restaurants_integration_response" {
+  rest_api_id = aws_api_gateway_rest_api.map_api.id
+  resource_id = aws_api_gateway_resource.restaurants.id
+  http_method = aws_api_gateway_method.options_restaurants.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET, POST, OPTIONS'"
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type, Authorization'"
+    "method.response.header.Access-Control-Allow-Credentials" = "'true'"
+  }
+}
 
 # [GET] /restaurants
 resource "aws_api_gateway_method" "get_restaurants" {
   rest_api_id   = aws_api_gateway_rest_api.map_api.id
   resource_id   = aws_api_gateway_resource.restaurants.id
   http_method   = "GET"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"  # 인증 방식 설정
+  authorizer_id = "s66h90"  # 생성된 Cognito 권한 부여자 ID
 }
+
 resource "aws_api_gateway_integration" "get_restaurants_int" {
   rest_api_id             = aws_api_gateway_rest_api.map_api.id
   resource_id             = aws_api_gateway_resource.restaurants.id
@@ -61,8 +101,10 @@ resource "aws_api_gateway_method" "post_bookmark" {
   rest_api_id   = aws_api_gateway_rest_api.map_api.id
   resource_id   = aws_api_gateway_resource.bookmarks.id
   http_method   = "POST"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"  # 인증 방식 설정
+  authorizer_id = "s66h90"  # 생성된 Cognito 권한 부여자 ID
 }
+
 resource "aws_api_gateway_integration" "post_bookmark_int" {
   rest_api_id             = aws_api_gateway_rest_api.map_api.id
   resource_id             = aws_api_gateway_resource.bookmarks.id
@@ -77,8 +119,10 @@ resource "aws_api_gateway_method" "post_review" {
   rest_api_id   = aws_api_gateway_rest_api.map_api.id
   resource_id   = aws_api_gateway_resource.reviews.id
   http_method   = "POST"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"  # 인증 방식 설정
+  authorizer_id = "s66h90"  # 생성된 Cognito 권한 부여자 ID
 }
+
 resource "aws_api_gateway_integration" "post_review_int" {
   rest_api_id             = aws_api_gateway_rest_api.map_api.id
   resource_id             = aws_api_gateway_resource.reviews.id
@@ -93,8 +137,10 @@ resource "aws_api_gateway_method" "get_reviews" {
   rest_api_id   = aws_api_gateway_rest_api.map_api.id
   resource_id   = aws_api_gateway_resource.reviews.id
   http_method   = "GET"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"  # 인증 방식 설정
+  authorizer_id = "s66h90"  # 생성된 Cognito 권한 부여자 ID
 }
+
 resource "aws_api_gateway_integration" "get_reviews_int" {
   rest_api_id             = aws_api_gateway_rest_api.map_api.id
   resource_id             = aws_api_gateway_resource.reviews.id
@@ -140,7 +186,7 @@ resource "aws_api_gateway_deployment" "map_deploy" {
     aws_api_gateway_integration.post_review_int,
     aws_api_gateway_integration.get_reviews_int
   ]
-  rest_api_id = aws_api_gateway_rest_api.map_api.id
+  
 }
 
 resource "aws_api_gateway_stage" "prod" {
