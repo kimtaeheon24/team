@@ -17,3 +17,19 @@ resource "aws_s3_bucket_public_access_block" "block" {
   ignore_public_acls      = true
   restrict_public_buckets = true
 }
+
+# s3.tf 맨 밑에 추가하세요
+resource "aws_s3_object" "index" {
+  bucket       = aws_s3_bucket.website_bucket.id
+  key          = "index.html"
+  
+  # 템플릿 파일을 읽어서 api_url 변수에 CloudFront 주소를 주입합니다.
+  content      = templatefile("${path.module}/index.html.tftpl", {
+    api_url = "https://${aws_cloudfront_distribution.s3_distribution.domain_name}/api"
+  })
+  
+  content_type = "text/html"
+
+  # CloudFront가 생성된 후에 업로드되도록 순서를 보장합니다.
+  depends_on = [aws_cloudfront_distribution.s3_distribution]
+}
