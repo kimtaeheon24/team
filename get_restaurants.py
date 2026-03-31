@@ -2,29 +2,36 @@ import json
 import boto3
 from decimal import Decimal
 
+# 숫자가 Decimal 형태일 때 오류 안 나게 해주는 도구
 class DecimalEncoder(json.JSONEncoder):
     def default(self, obj):
-        if isinstance(obj, Decimal): return float(obj)
+        if isinstance(obj, Decimal):
+            return float(obj)
         return super(DecimalEncoder, self).default(obj)
 
 dynamodb = boto3.resource('dynamodb')
-table_restaurants = dynamodb.Table('Restaurants')
+table = dynamodb.Table('Restaurants')
 
 def lambda_handler(event, context):
-    method = event.get('requestContext', {}).get('http', {}).get('method', 'UNKNOWN')
     headers = {
         'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-        'Content-Type': 'application/json; charset=utf-8'
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type'
     }
-
-    if method == 'OPTIONS': return {'statusCode': 200, 'headers': headers}
-
+    
     try:
-        if method == 'GET':
-            items = table_restaurants.scan().get('Items', [])
-            return {'statusCode': 200, 'headers': headers, 'body': json.dumps(items, cls=DecimalEncoder, ensure_ascii=False)}
-        # (POST/DELETE 로직은 일단 생략하거나 아까 코드를 그대로 넣으셔도 됩니다)
+        # 전체 식당 정보를 긁어와서 지도에 뿌려줍니다.
+        response = table.scan()
+        items = response.get('Items', [])
+
+        return {
+            'statusCode': 200,
+            'headers': headers,
+            'body': json.dumps(items, ensure_ascii=False, cls=DecimalEncoder)
+        }
     except Exception as e:
-        return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': str(e)})}
+        return {
+            'statusCode': 500,
+            'headers': headers,
+            'body': json.dumps({'error': str(e)})
+        }
