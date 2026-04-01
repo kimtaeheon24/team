@@ -1,97 +1,57 @@
-# CloudFront가 S3에 접근할 수 있게 해주는 '출입증'
+# 1. CloudFront Origin Access Control (S3 보안 강화)
 resource "aws_cloudfront_origin_access_control" "default" {
   name                              = "s3_oac"
+  description                       = "CloudFront OAC for S3"
   origin_access_control_origin_type = "s3"
   signing_behavior                  = "always"
-  signing_protocol                 = "sigv4"
+  signing_protocol                  = "sigv4"
 }
 
+# 2. CloudFront Distribution 생성
 resource "aws_cloudfront_distribution" "s3_distribution" {
-  enabled             = true
-  default_root_object = "index.html"
-  # aliases             = ["cdn.kimsoohyun.store"] # 수현님의 도메인
-
-  # [Origin 1] S3 (정적 파일)
   origin {
-    domain_name              = aws_s3_bucket.website_bucket.bucket_regional_domain_name
-    origin_id                = "S3Origin"
+    domain_name              = aws_s3_bucket.frontend.bucket_regional_domain_name
     origin_access_control_id = aws_cloudfront_origin_access_control.default.id
+    origin_id                = "S3-Frontend"
   }
 
-  # [Origin 2] API Gateway (백엔드)
-  origin {
-    domain_name = "${aws_api_gateway_rest_api.map_api.id}.execute-api.ap-northeast-2.amazonaws.com"
-    origin_id   = "APIGatewayOrigin"
-    origin_path = ""
+  enabled             = true
+  is_ipv6_enabled     = true
+  default_root_object = "index.html"
 
-    custom_origin_config {
-      http_port              = 80
-      https_port             = 443
-      origin_protocol_policy = "https-only"
-      origin_ssl_protocols   = ["TLSv1.2"]
-    }
-  }
-
-  # 기본 동작: S3에서 웹사이트 보여주기
   default_cache_behavior {
     allowed_methods  = ["GET", "HEAD"]
     cached_methods   = ["GET", "HEAD"]
-    target_origin_id = "S3Origin"
+    target_origin_id = "S3-Frontend"
 
-    viewer_protocol_policy = "redirect-to-https"
     forwarded_values {
       query_string = false
-      cookies { forward = "none" }
+      cookies {
+        forward = "none"
+      }
     }
+
+    viewer_protocol_policy = "redirect-to-https" # HTTP 접속 시 HTTPS로 강제 전환
+    min_ttl                = 0
+    default_ttl            = 3600
+    max_ttl                = 86400
   }
 
-  # API 요청 동작: /api/* 경로는 API Gateway로 전달
-  ordered_cache_behavior {
-    path_pattern     = "/api/*"
-    allowed_methods  = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
-    cached_methods   = ["GET", "HEAD"]
-    target_origin_id = "APIGatewayOrigin"
-
-    viewer_protocol_policy = "redirect-to-https"
-    forwarded_values {
-      query_string = true
-      headers      = ["Authorization", "Origin"]
-      cookies { forward = "none" }
-    }
-    min_ttl = 0
-    default_ttl = 0
-    max_ttl = 0
-  }
+  # 카카오맵 연동을 위해 필요한 가격 클래스 (가장 저렴한 옵션)
+  price_class = "PriceClass_100"
 
   restrictions {
-    geo_restriction { restriction_type = "none" }
+    geo_restriction {
+      restriction_type = "none"
+    }
   }
 
   viewer_certificate {
-    cloudfront_default_certificate = true 
-    # 실제 도메인 사용 시 ACM 인증서 ARN을 여기에 넣어야 합니다.
+    cloudfront_default_certificate = true # 기본 cloudfront.net 인증서 사용
   }
 }
 
-# CloudFront가 S3 버킷에 들어올 수 있도록 정책 추가
-resource "aws_s3_bucket_policy" "allow_cloudfront" {
-  bucket = aws_s3_bucket.website_bucket.id
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action   = "s3:GetObject"
-        Effect   = "Allow"
-        Resource = "${aws_s3_bucket.website_bucket.arn}/*"
-        Principal = {
-          Service = "cloudfront.amazonaws.com"
-        }
-        Condition = {
-          StringEquals = {
-            "AWS:SourceArn" = aws_cloudfront_distribution.s3_distribution.arn
-          }
-        }
-      }
-    ]
-  })
+# 3. 생성된 클라우드프론트 주소 출력
+output "cloudfront_domain_name" {
+  value = aws_cloudfront_distribution.s3_distribution.domain_name
 }

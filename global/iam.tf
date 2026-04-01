@@ -1,0 +1,127 @@
+# 1. 사용자 리스트 정의 (기존 변수 유지)
+variable "team_names" {
+  type    = list(string)
+  default = ["josh", "jenny", "tina", "sam"]
+}
+
+# 2. IAM 사용자 및 로그인 프로필 생성 (기존 유지)
+resource "aws_iam_user" "team" {
+  for_each = toset(var.team_names)
+  name     = each.value
+  path     = "/system/"
+}
+
+resource "aws_iam_user_login_profile" "team_login" {
+  for_each                = aws_iam_user.team
+  user                    = each.value.name
+  password_length         = 12
+  password_reset_required = true
+}
+
+# 3. 그룹 설정 (관리자 및 개발자)
+resource "aws_iam_group" "admins" {
+  name = "Infrastructure-Admins"
+}
+
+resource "aws_iam_group" "developers" {
+  name = "Project-Developers"
+}
+
+# 4. 그룹별 정책 연결
+# 관리자 그룹 권한
+resource "aws_iam_group_policy_attachment" "admin_attach" {
+  group      = aws_iam_group.admins.name
+  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
+}
+
+# 개발자 그룹 공통 권한 (S3, Lambda, DB, API GW 등)
+resource "aws_iam_group_policy_attachment" "dev_s3" {
+  group      = aws_iam_group.developers.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+}
+
+resource "aws_iam_group_policy_attachment" "dev_lambda" {
+  group      = aws_iam_group.developers.name
+  policy_arn = "arn:aws:iam::aws:policy/AWSLambda_FullAccess"
+}
+
+resource "aws_iam_group_policy_attachment" "dev_api_gateway" {
+  group      = aws_iam_group.developers.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonAPIGatewayAdministrator"
+}
+
+resource "aws_iam_group_policy_attachment" "dev_change_password" {
+  group      = aws_iam_group.developers.name
+  policy_arn = "arn:aws:iam::aws:policy/IAMUserChangePassword"
+}
+
+# 5. 사용자 그룹 멤버십 설정
+resource "aws_iam_user_group_membership" "josh_membership" {
+  user   = "josh"
+  groups = [aws_iam_group.admins.name]
+}
+
+resource "aws_iam_user_group_membership" "team_membership" {
+  for_each = toset(["jenny", "tina", "sam"])
+  user     = each.value
+  groups   = [aws_iam_group.developers.name]
+}
+
+# 6. 람다가 실제로 사용할 실행 역할 (Role) 생성
+resource "aws_iam_role" "lambda_exec_role" {
+  name = "map-project-lambda-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_dynamodb_full" {
+  role       = aws_iam_role.lambda_exec_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess"
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_logs" {
+  role       = aws_iam_role.lambda_exec_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+# 7. [임시] 제니를 위한 관리자(Full Access) 권한
+# 제니가 모든 작업을 원활하게 할 수 있도록 임시로 모든 권한을 부여합니다.
+resource "aws_iam_user_policy" "jenny_master_policy" {
+  name = "JennyTemporaryAdminPolicy"
+  user = "jenny"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action   = "*"
+        Effect   = "Allow"
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# 8. 결과 출력
+output "initial_passwords" {
+  value = {
+    for name, profile in aws_iam_user_login_profile.team_login : 
+    name => profile.password
+  }
+  sensitive = true
+}
+
+output "lambda_role_arn" {
+  value = aws_iam_role.lambda_exec_role.arn
+}
