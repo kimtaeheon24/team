@@ -1,130 +1,102 @@
-# 1. API 게이트웨이 생성
-resource "aws_api_gateway_rest_api" "map_api" {
-  name        = "MapProject-API"
-  description = "맛집 지도 프로젝트 통합 API"
+# 1. API 게이트웨이 생성 (HTTP API v2)
+resource "aws_apigatewayv2_api" "map_api" {
+  name          = "MapProject-API"
+  description   = "맛집 지도 프로젝트 통합 API (v2)"
+  protocol_type = "HTTP"
+
+  # CORS 설정을 여기서 한 방에 끝냅니다!
+  cors_configuration {
+    allow_origins = ["*"]
+    allow_methods = ["GET", "POST", "DELETE", "OPTIONS"]
+    allow_headers = ["Content-Type", "Authorization"]
+    max_age       = 300
+  }
 }
 
-# 2. 리소스 정의 (경로 만들기: /restaurants, /reviews, /bookmarks)
-resource "aws_api_gateway_resource" "res" {
-  for_each    = toset(["restaurants", "reviews", "bookmarks"])
-  rest_api_id = aws_api_gateway_rest_api.map_api.id
-  parent_id   = aws_api_gateway_rest_api.map_api.root_resource_id
-  path_part   = each.key
+# 2. 스테이지 및 자동 배포 설정 (v2는 배포가 훨씬 쉽습니다)
+resource "aws_apigatewayv2_stage" "dev" {
+  api_id      = aws_apigatewayv2_api.map_api.id
+  name        = "dev"
+  auto_deploy = true # 변경사항이 생기면 자동으로 배포해줍니다!
 }
 
-# 3. CORS 설정 (모든 리소스에 대해 브라우저 허용)
-module "cors" {
-  source  = "squidfunk/api-gateway-enable-cors/aws"
-  version = "0.3.3"
+# 3. 람다 통합 (Integration) - v2 전용
+resource "aws_apigatewayv2_integration" "lambda_int" {
+  for_each = aws_lambda_function.functions
 
-  for_each        = aws_api_gateway_resource.res
-  api_id          = aws_api_gateway_rest_api.map_api.id
-  api_resource_id = each.value.id
+  api_id           = aws_apigatewayv2_api.map_api.id
+  integration_type = "AWS_PROXY"
+  integration_uri  = each.value.invoke_arn
+  payload_format_version = "2.0" # v2의 표준 형식
 }
 
-# 4. API 메서드 및 람다 통합 (노션 설계 반영)
+# 4. 라우팅 설정 (Route) - 메서드와 경로를 한 번에 정의!
 # GET /restaurants
-resource "aws_api_gateway_method" "get_restaurants" {
-  rest_api_id   = aws_api_gateway_rest_api.map_api.id
-  resource_id   = aws_api_gateway_resource.res["restaurants"].id
-  http_method   = "GET"
-  authorization = "NONE"
-}
-
-resource "aws_api_gateway_integration" "get_restaurants_int" {
-  rest_api_id             = aws_api_gateway_rest_api.map_api.id
-  resource_id             = aws_api_gateway_resource.res["restaurants"].id
-  http_method             = aws_api_gateway_method.get_restaurants.http_method
-  integration_http_method = "POST"
-  type                    = "AWS_PROXY"
-  uri                     = aws_lambda_function.functions["get_restaurants"].invoke_arn
+resource "aws_apigatewayv2_route" "get_restaurants" {
+  api_id    = aws_apigatewayv2_api.map_api.id
+  route_key = "GET /restaurants"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda_int["get_restaurants"].id}"
 }
 
 # GET /reviews
-resource "aws_api_gateway_method" "get_reviews" {
-  rest_api_id   = aws_api_gateway_rest_api.map_api.id
-  resource_id   = aws_api_gateway_resource.res["reviews"].id
-  http_method   = "GET"
-  authorization = "NONE"
-}
-
-resource "aws_api_gateway_integration" "get_reviews_int" {
-  rest_api_id             = aws_api_gateway_rest_api.map_api.id
-  resource_id             = aws_api_gateway_resource.res["reviews"].id
-  http_method             = aws_api_gateway_method.get_reviews.http_method
-  integration_http_method = "POST"
-  type                    = "AWS_PROXY"
-  uri                     = aws_lambda_function.functions["get_reviews"].invoke_arn
+resource "aws_apigatewayv2_route" "get_reviews" {
+  api_id    = aws_apigatewayv2_api.map_api.id
+  route_key = "GET /reviews"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda_int["get_reviews"].id}"
+  authorization_type = "NONE"
 }
 
 # POST /reviews
-resource "aws_api_gateway_method" "post_review" {
-  rest_api_id   = aws_api_gateway_rest_api.map_api.id
-  resource_id   = aws_api_gateway_resource.res["reviews"].id
-  http_method   = "POST"
-  authorization = "NONE"
-}
-
-resource "aws_api_gateway_integration" "post_review_int" {
-  rest_api_id             = aws_api_gateway_rest_api.map_api.id
-  resource_id             = aws_api_gateway_resource.res["reviews"].id
-  http_method             = aws_api_gateway_method.post_review.http_method
-  integration_http_method = "POST"
-  type                    = "AWS_PROXY"
-  uri                     = aws_lambda_function.functions["post_review"].invoke_arn
+resource "aws_apigatewayv2_route" "post_review" {
+  api_id    = aws_apigatewayv2_api.map_api.id
+  route_key = "POST /reviews"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda_int["post_review"].id}"
 }
 
 # POST /bookmarks
-resource "aws_api_gateway_method" "post_bookmark" {
-  rest_api_id   = aws_api_gateway_rest_api.map_api.id
-  resource_id   = aws_api_gateway_resource.res["bookmarks"].id
-  http_method   = "POST"
-  authorization = "NONE"
+resource "aws_apigatewayv2_route" "post_bookmark" {
+  api_id    = aws_apigatewayv2_api.map_api.id
+  route_key = "POST /bookmarks"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda_int["post_bookmark"].id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
 }
 
-resource "aws_api_gateway_integration" "post_bookmark_int" {
-  rest_api_id             = aws_api_gateway_rest_api.map_api.id
-  resource_id             = aws_api_gateway_resource.res["bookmarks"].id
-  http_method             = aws_api_gateway_method.post_bookmark.http_method
-  integration_http_method = "POST"
-  type                    = "AWS_PROXY"
-  uri                     = aws_lambda_function.functions["post_bookmark"].invoke_arn
+resource "aws_apigatewayv2_route" "delete_review" {
+  api_id             = aws_apigatewayv2_api.map_api.id
+  route_key          = "DELETE /reviews"
+  target             = "integrations/${aws_apigatewayv2_integration.lambda_int["post_review"].id}" # post_review.py에서 삭제 로직도 같이 처리 가능합니다.
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
 }
 
-# 5. 람다 호출 권한 (API GW -> Lambda)
+# 5. 람다 호출 권한 부여
 resource "aws_lambda_permission" "apigw_lambda" {
   for_each      = aws_lambda_function.functions
   statement_id  = "AllowExecutionFromAPIGateway"
   action        = "lambda:InvokeFunction"
   function_name = each.value.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.map_api.execution_arn}/*/*"
+  
+  # v2의 execution_arn 형식을 사용합니다.
+  source_arn    = "${aws_apigatewayv2_api.map_api.execution_arn}/*/*"
 }
 
-# 6. 배포 및 스테이지 설정
-resource "aws_api_gateway_deployment" "dev" {
-  rest_api_id = aws_api_gateway_rest_api.map_api.id
-
-  # 모든 메서드 연결이 완료된 후 배포
-  depends_on = [
-    aws_api_gateway_integration.get_restaurants_int,
-    aws_api_gateway_integration.get_reviews_int,
-    aws_api_gateway_integration.post_review_int,
-    aws_api_gateway_integration.post_bookmark_int
-  ]
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
-resource "aws_api_gateway_stage" "dev" {
-  deployment_id = aws_api_gateway_deployment.dev.id
-  rest_api_id   = aws_api_gateway_rest_api.map_api.id
-  stage_name    = "dev"
-}
-
-# 7. 출력값 (터미널에서 바로 확인 가능)
+# 6. 출력값 (Invoke URL)
 output "api_url" {
-  value = aws_api_gateway_stage.dev.invoke_url
+  value = aws_apigatewayv2_stage.dev.invoke_url
+}
+
+# [추가] 1. Cognito Authorizer 설정
+resource "aws_apigatewayv2_authorizer" "cognito" {
+  api_id           = aws_apigatewayv2_api.map_api.id
+  authorizer_type  = "JWT"
+  identity_sources = ["$request.header.Authorization"]
+  name             = "cognito-authorizer"
+
+  jwt_configuration {
+    # cognito.tf에서 만든 클라이언트 ID와 풀 엔드포인트를 참조합니다.
+    audience = [aws_cognito_user_pool_client.client.id]
+    issuer   = "https://cognito-idp.ap-northeast-2.amazonaws.com/${aws_cognito_user_pool.pool.id}"
+  }
 }

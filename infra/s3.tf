@@ -31,12 +31,20 @@ resource "aws_s3_bucket_policy" "allow_public" {
   bucket     = aws_s3_bucket.frontend.id
   policy     = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
+    Statement = [
+      {
       Sid       = "PublicReadGetter"
       Effect    = "Allow"
-      Principal = "*"
+      Principal = {
+        Service = "cloudfront.amazonaws.com"
+      }
       Action    = "s3:GetObject"
       Resource  = "${aws_s3_bucket.frontend.arn}/*"
+      Condition = {
+        StringEquals = {
+          "AWS:SourceArn" = aws_cloudfront_distribution.s3_distribution.arn
+        }
+      }
     }]
   })
 }
@@ -46,9 +54,48 @@ resource "aws_s3_object" "index" {
   bucket       = aws_s3_bucket.frontend.id
   key          = "index.html"
   # tftpl 파일을 사용해 API 주소를 HTML 안에 자동으로 박아넣습니다.
-  content      = templatefile("${path.module}/../src/frontend/index.html.tftpl", {
-    API_BASE = aws_api_gateway_stage.dev.invoke_url
-    API_URL  = aws_api_gateway_stage.dev.invoke_url
-  })
+  source      = "${path.module}/../src/frontend/index.html"
   content_type = "text/html"
+  etag = filemd5("${path.module}/../src/frontend/index.html")
+}
+
+resource "aws_s3_object" "config" {
+  bucket       = aws_s3_bucket.frontend.id
+  key          = "config.js"
+  
+  # content 안에 4가지 항목이 모두 들어있는지 꼭 확인하세요!
+  content = <<-EOF
+    window.APP_CONFIG = {
+      API_BASE_URL: "${aws_apigatewayv2_stage.dev.invoke_url}",
+      USER_POOL_ID: "${aws_cognito_user_pool.pool.id}",
+      CLIENT_ID: "${aws_cognito_user_pool_client.client.id}",
+      AUTH_DOMAIN: "${aws_cognito_user_pool_domain.main.domain}.auth.ap-northeast-2.amazoncognito.com"
+    };
+  EOF
+
+  # etag가 있어야 파일 내용 변경을 테라폼이 감지하고 S3에 덮어씁니다.
+  etag = md5(<<-EOF
+    window.APP_CONFIG = {
+      API_BASE_URL: "${aws_apigatewayv2_stage.dev.invoke_url}",
+      USER_POOL_ID: "${aws_cognito_user_pool.pool.id}",
+      CLIENT_ID: "${aws_cognito_user_pool_client.client.id}",
+      AUTH_DOMAIN: "${aws_cognito_user_pool_domain.main.domain}.auth.ap-northeast-2.amazoncognito.com"
+    };
+  EOF
+  )
+
+  content_type = "application/javascript"
+}
+
+# S3 오브젝트(config.js 등)가 변경될 때만 실행됩니다.
+resource "null_resource" "invalidate_cache" {
+  triggers = {
+    # config.js나 index.html이 바뀔 때마다 실행되도록 설정
+    config_hash = aws_s3_object.config.etag
+    index_hash  = aws_s3_object.index.etag
+  }
+
+  provisioner "local-exec" {
+    command = "aws cloudfront create-invalidation --distribution-id ${aws_cloudfront_distribution.s3_distribution.id} --paths '/*'"
+  }
 }
