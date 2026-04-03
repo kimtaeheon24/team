@@ -5,7 +5,7 @@ locals {
 
 # 2. [Layer용] 공통 유틸리티 폴더 압축
 data "archive_file" "common_layer" {
-  type        = "zip"
+  type = "zip"
   # 수현님의 폴더 구조에 맞게 경로 수정: ../src/layers/common
   source_dir  = "${path.module}/../src/layers/common"
   output_path = "${path.module}/common_layer.zip"
@@ -31,10 +31,10 @@ data "archive_file" "lambda_zip" {
 resource "aws_lambda_function" "functions" {
   for_each      = toset(local.lambda_names)
   function_name = each.key
-  
-  role          = aws_iam_role.lambda_role.arn 
-  handler       = "${each.key}.lambda_handler"
-  runtime       = "python3.9"
+
+  role    = aws_iam_role.lambda_role.arn
+  handler = "${each.key}.lambda_handler"
+  runtime = "python3.9"
 
   filename         = data.archive_file.lambda_zip[each.key].output_path
   source_code_hash = data.archive_file.lambda_zip[each.key].output_base64sha256

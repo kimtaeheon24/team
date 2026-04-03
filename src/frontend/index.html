@@ -1,450 +1,343 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="utf-8">
-    <title>수현님의 맛집 지도</title>
-    <style>
-        /* 기존 스타일 유지 */
-        body { font-family: 'Malgun Gothic', sans-serif; margin: 20px; }
-        #map { width: 100%; height: 400px; border-radius: 10px; margin-bottom: 20px; }
-        .container { display: flex; gap: 20px; }
-        .search-panel, .info-panel { flex: 1; padding: 15px; border: 1px solid #ddd; border-radius: 8px; }
-        input, button { padding: 8px; margin: 5px 0; width: 100%; box-sizing: border-box; }
-        button { background-color: #fee500; border: none; cursor: pointer; font-weight: bold; }
-        .review-item { border-bottom: 1px solid #eee; padding: 10px 0; position: relative; }
-        .delete-btn { color: red; cursor: pointer; border: 1px solid red; background: white; padding: 2px 5px; font-size: 0.8em; float: right; }
-        .auth-panel { background: #f4f4f4; padding: 15px; border-radius: 8px; margin-bottom: 15px; text-align: center; }
-        .login-btn { background-color: #4CAF50; color: white; width: 250px; }
-        
-        /* 추가된 스타일 */
-        .user-name { font-weight: bold; color: #4CAF50; }
-        .logout-btn { width: auto !important; padding: 5px 15px !important; background-color: #f44336 !important; color: white; margin-left: 10px; display: inline-block; }
-    </style>
+<meta charset="utf-8">
+<title>맛집 지도</title>
+
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/aws-amplify@4.3.43/dist/aws-amplify.min.js"></script>
+<script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=008785773c36ce63a3340655b913ab62&libraries=services"></script>
+
+<style>
+body { font-family: Arial; margin:20px; }
+#map { width:100%; height:400px; margin-bottom:20px; }
+.panel { border:1px solid #ddd; padding:10px; margin-top:10px; }
+#placesList { padding-left: 18px; }
+#placesList li { margin-bottom: 6px; }
+#reviews > div { margin-bottom: 10px; }
+</style>
 </head>
+
 <body>
 
-<h2>📍 수현님의 맛집 지도</h2>
+<h2>📍 맛집 지도</h2>
 
-<div class="auth-panel">
-    <div id="login-section">
-        <p>서비스 이용을 위해 로그인이 필요합니다.</p>
-        <button onclick="handleHostedLogin()" class="login-btn">로그인 / 회원가입 페이지로 이동</button>
-    </div>
-    
-    <div id="user-info" style="display:none;">
-        <span class="user-name" id="user-email"></span>님 환영합니다! 
-        <button onclick="handleSignOut()" class="logout-btn">로그아웃</button>
-    </div>
+<div>
+  <button onclick="login()">로그인</button>
+  <button onclick="logout()">로그아웃</button>
+  <span id="user"></span>
 </div>
+
+<input type="text" id="keyword" placeholder="장소 검색">
+<button onclick="searchPlaces()">검색</button>
+<ul id="placesList"></ul>
 
 <div id="map"></div>
 
-<div class="container">
-    <div class="search-panel">
-        <h3>🔍 장소 검색</h3>
-        <input type="text" id="keyword" placeholder="장소를 입력하세요">
-        <button onclick="searchPlaces()">검색하기</button>
-        <ul id="placesList"></ul>
-    </div>
+<div class="panel" id="detail" style="display:none;">
+  <h3 id="placeName"></h3>
+  <p>🔥 찜 수: <span id="bookmarkCount">0</span></p>
 
-    <div class="info-panel" id="detail-panel" style="display:none;">
-        <h3 id="selected-name">장소명</h3>
-        <p>🔥 찜: <span id="bookmark-count">0</span>명</p>
-        <p id="selected-address"></p>
-        
-        <div id="action-buttons">
-            <button onclick="addBookmark()">⭐ 이 장소 찜하기</button>
-            <hr>
-            <h4>💬 리뷰 작성</h4>
-            <input type="number" id="rating" placeholder="별점 (1~5)" min="1" max="5">
-            <textarea id="comment" placeholder="리뷰 내용을 입력하세요" style="width:100%; height:60px;"></textarea>
-            <button onclick="postReview()">리뷰 등록</button>
-        </div>
-        
-        <div id="login-required-msg" style="display:none; color: #f44336; font-weight: bold;">
-            <hr>
-            <p>리뷰 작성과 찜하기는 로그인 후 가능합니다.</p>
-        </div>
+  <button onclick="toggleBookmark()">⭐ 찜하기 / 취소</button>
 
-        <h4>📋 방문자 리뷰</h4>
-        <div id="reviews-list"></div>
-    </div>
+  <hr>
+
+  <h4>리뷰 작성</h4>
+  <input id="rating" type="number" min="1" max="5" placeholder="별점">
+  <input id="comment" placeholder="리뷰">
+  <button onclick="postReview()">등록</button>
+
+  <hr>
+
+  <h4>리뷰 목록</h4>
+  <div id="reviews"></div>
 </div>
 
-<script src="./config.js"></script>
-<script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=008785773c36ce63a3340655b913ab62&libraries=services"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/aws-amplify/4.3.46/aws-amplify.min.js"></script>
-
 <script>
-    const { Amplify, Auth } = window.aws_amplify;
+const Amplify = window.aws_amplify.Amplify;
+const Auth = window.aws_amplify.Auth;
 
-    Amplify.configure({
-        Auth: {
-            region: 'ap-northeast-2',
-            userPoolId: window.APP_CONFIG.USER_POOL_ID,
-            userPoolWebClientId: window.APP_CONFIG.CLIENT_ID,
-            oauth: {
-                domain: window.APP_CONFIG.AUTH_DOMAIN,
-                scope: ['email', 'openid', 'profile'],
-                redirectSignIn: window.location.origin + '/',
-                redirectSignOut: window.location.origin + '/',
-                responseType: 'token'
-            }
-        }
+Amplify.configure({
+  Auth: {
+    region: 'ap-northeast-2',
+    userPoolId: window.APP_CONFIG.USER_POOL_ID,
+    userPoolWebClientId: window.APP_CONFIG.CLIENT_ID,
+    oauth: {
+      domain: window.APP_CONFIG.AUTH_DOMAIN,
+      scope: ['email','openid','profile'],
+      redirectSignIn: window.APP_CONFIG.REDIRECT_SIGN_IN,
+      redirectSignOut: window.APP_CONFIG.REDIRECT_SIGN_OUT,
+      responseType: 'token'
+    }
+  }
+});
+
+const API_URL = window.APP_CONFIG.API_BASE_URL;
+
+let map;
+let ps;
+let selectedPlace = null;
+let markers = [];
+let restaurantData = [];
+
+function initMap() {
+  map = new kakao.maps.Map(document.getElementById('map'), {
+    center: new kakao.maps.LatLng(37.5665, 126.9780),
+    level: 3
+  });
+
+  ps = new kakao.maps.services.Places();
+  loadRegisteredPlaces();
+}
+
+function login() {
+  Auth.federatedSignIn();
+}
+
+async function logout() {
+  await Auth.signOut();
+  location.reload();
+}
+
+async function checkUser() {
+  try {
+    const session = await Auth.currentSession();
+    const payload = session.getIdToken().decodePayload();
+    document.getElementById('user').innerText = payload.email;
+  } catch (e) {
+    document.getElementById('user').innerText = '';
+  }
+}
+
+async function getAuthHeader() {
+  const session = await Auth.currentSession();
+  const token = session.getIdToken().getJwtToken();
+  return {
+    Authorization: `Bearer ${token}`
+  };
+}
+
+function searchPlaces() {
+  const keyword = document.getElementById('keyword').value;
+
+  if (!keyword.trim()) {
+    alert("검색어 입력");
+    return;
+  }
+
+  ps.keywordSearch(keyword, (data, status) => {
+    if (status === kakao.maps.services.Status.OK) {
+      displayPlaces(data);
+    }
+  });
+}
+
+function displayPlaces(places) {
+  const list = document.getElementById('placesList');
+  list.innerHTML = '';
+
+  places.forEach(p => {
+    const li = document.createElement('li');
+    li.innerHTML = `
+      ${p.place_name}
+      <button onclick='selectSearchPlace(${JSON.stringify(p)})'>선택</button>
+    `;
+    list.appendChild(li);
+  });
+}
+
+function selectSearchPlace(p) {
+  const existingPlace = restaurantData.find(
+    r => String(r.place_id) === String(p.id)
+  );
+
+  if (existingPlace) {
+    selectedPlace = existingPlace;
+  } else {
+    selectedPlace = {
+      place_id: String(p.id),
+      name: p.place_name,
+      address: p.address_name || p.road_address_name,
+      category: p.category_group_name,
+      lat: p.y,
+      lng: p.x,
+      bookmark_count: 0
+    };
+  }
+
+  document.getElementById('detail').style.display = 'block';
+  document.getElementById('placeName').innerText = selectedPlace.name;
+  document.getElementById('bookmarkCount').innerText = selectedPlace.bookmark_count || 0;
+
+  loadReviews(selectedPlace.place_id);
+  map.setCenter(new kakao.maps.LatLng(Number(selectedPlace.lat), Number(selectedPlace.lng)));
+}
+
+async function loadRegisteredPlaces() {
+  markers.forEach(m => m.setMap(null));
+  markers = [];
+
+  const res = await fetch(`${API_URL}/restaurants`);
+  const data = await res.json();
+
+  restaurantData = data;
+
+  data.forEach(p => {
+    const marker = new kakao.maps.Marker({
+      map,
+      position: new kakao.maps.LatLng(Number(p.lat), Number(p.lng))
     });
 
-    const API_URL = window.APP_CONFIG ? window.APP_CONFIG.API_BASE_URL : "";
-    let map, ps;
-    let selectedPlace = null;
-    let isLoggedIn = false; // 로그인 상태 추적 변수
+    kakao.maps.event.addListener(marker, 'click', () => {
+      selectPlace(p);
+    });
 
-    initMap();
-    checkUser();
+    markers.push(marker);
+  });
 
-    function initMap() {
-        const container = document.getElementById('map');
-        map = new kakao.maps.Map(container, { center: new kakao.maps.LatLng(37.566826, 126.9786567), level: 3 });
-        ps = new kakao.maps.services.Places();
-        loadRegisteredPlaces();
+  return data;
+}
+
+function selectPlace(place) {
+  selectedPlace = place;
+
+  document.getElementById('detail').style.display = 'block';
+  document.getElementById('placeName').innerText = place.name;
+  document.getElementById('bookmarkCount').innerText = place.bookmark_count || 0;
+
+  loadReviews(place.place_id);
+}
+
+async function toggleBookmark() {
+  try {
+    const auth = await getAuthHeader();
+
+    const res = await fetch(`${API_URL}/bookmarks`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...auth
+      },
+      body: JSON.stringify({
+        place_id: selectedPlace.place_id,
+        name: selectedPlace.name,
+        address: selectedPlace.address,
+        category: selectedPlace.category,
+        lat: selectedPlace.lat,
+        lng: selectedPlace.lng
+      })
+    });
+
+    const data = await res.json();
+    alert(data.message);
+
+    const places = await loadRegisteredPlaces();
+    const updatedPlace = places.find(
+      p => String(p.place_id) === String(selectedPlace.place_id)
+    );
+
+    if (updatedPlace) {
+      selectedPlace = updatedPlace;
+      selectPlace(updatedPlace);
+    } else {
+      document.getElementById('bookmarkCount').innerText = 0;
     }
 
-    function handleHostedLogin() {
-        Auth.federatedSignIn();
+  } catch (e) {
+    console.error(e);
+    alert("로그인 필요");
+  }
+}
+
+async function postReview() {
+  try {
+    const auth = await getAuthHeader();
+
+    const res = await fetch(`${API_URL}/reviews`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...auth
+      },
+      body: JSON.stringify({
+        place_id: selectedPlace.place_id,
+        rating: Number(document.getElementById('rating').value),
+        comment: document.getElementById('comment').value
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      console.error(err);
+      alert(err.error || "리뷰 등록 실패");
+      return;
     }
 
-    // 로그인 상태 체크 및 UI 업데이트
-    async function checkUser() {
-        try {
-            const user = await Auth.currentAuthenticatedUser();
-            isLoggedIn = true;
-            document.getElementById('login-section').style.display = 'none';
-            document.getElementById('user-info').style.display = 'block';
-            document.getElementById('user-email').innerText = user.attributes.email.split('@')[0]; // 이메일 앞부분만 표시
-            
-            // 정보 패널 UI 조정
-            updateDetailUI();
-        } catch {
-            isLoggedIn = false;
-            document.getElementById('login-section').style.display = 'block';
-            document.getElementById('user-info').style.display = 'none';
-            updateDetailUI();
-        }
+    document.getElementById('rating').value = '';
+    document.getElementById('comment').value = '';
+    loadReviews(selectedPlace.place_id);
+
+  } catch (e) {
+    console.error(e);
+    alert("로그인 필요");
+  }
+}
+
+async function loadReviews(placeId) {
+  const res = await fetch(`${API_URL}/reviews?place_id=${placeId}`);
+  const data = await res.json();
+
+  const el = document.getElementById('reviews');
+  el.innerHTML = '';
+
+  data.forEach(r => {
+    const div = document.createElement('div');
+    div.innerHTML = `
+      ${r.user_email || '익명'} ⭐${r.rating}<br>
+      ${r.comment}
+      <button onclick="deleteReview('${r.review_id}')">삭제</button>
+      <hr>
+    `;
+    el.appendChild(div);
+  });
+}
+
+async function deleteReview(id) {
+  try {
+    const auth = await getAuthHeader();
+
+    const res = await fetch(`${API_URL}/reviews`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        ...auth
+      },
+      body: JSON.stringify({
+        place_id: selectedPlace.place_id,
+        review_id: id
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      console.error(err);
+      alert(err.error || "삭제 실패");
+      return;
     }
 
-    // 상세 패널의 버튼 표시 여부 결정
-    function updateDetailUI() {
-        const actionSection = document.getElementById('action-buttons');
-        const msgSection = document.getElementById('login-required-msg');
-        
-        if (isLoggedIn) {
-            if(actionSection) actionSection.style.display = 'block';
-            if(msgSection) msgSection.style.display = 'none';
-        } else {
-            if(actionSection) actionSection.style.display = 'none';
-            if(msgSection) msgSection.style.display = 'block';
-        }
-    }
-
-    async function handleSignOut() {
-        try {
-            await Auth.signOut();
-            // 로그아웃 시 브라우저 로컬 저장소 비우고 새로고침
-            window.location.href = window.location.origin; 
-        } catch (e) {
-            console.error("Sign out error:", e);
-        }
-    }
-
-
-
-    // --- 검색 및 지도 관련 ---
-
-    function searchPlaces() {
-
-        const keyword = document.getElementById('keyword').value;
-
-        if (!keyword.trim()) return alert('키워드를 입력해주세요!');
-
-        ps.keywordSearch(keyword, (data, status) => {
-
-            if (status === kakao.maps.services.Status.OK) displayPlaces(data);
-
-        });
-
-    }
-
-
-
-    function displayPlaces(places) {
-
-        const listEl = document.getElementById('placesList');
-
-        listEl.innerHTML = '';
-
-        places.forEach(place => {
-
-            const li = document.createElement('li');
-
-            li.innerHTML = `<strong>${place.place_name}</strong> <button onclick='selectPlace(${JSON.stringify(place)})' style="width:auto; padding:2px 5px;">선택</button>`;
-
-            listEl.appendChild(li);
-
-        });
-
-    }
-
-
-
-    function selectPlace(place) {
-
-        selectedPlace = place;
-
-        document.getElementById('detail-panel').style.display = 'block';
-
-        document.getElementById('selected-name').innerText = place.place_name;
-
-        document.getElementById('selected-address').innerText = place.address_name || place.road_address_name;
-
-        updateDetailUI();
-
-        loadReviews(place.id);
-
-        map.setCenter(new kakao.maps.LatLng(place.y, place.x));
-
-    }
-
-
-
-    // --- API 호출 관련 (Authorization 헤더 포함) ---
-
-    async function addBookmark() {
-
-        try {
-
-            const session = await Auth.currentSession();
-
-            const token = session.getIdToken().getJwtToken();
-
-
-
-            const body = {
-
-                place_id: selectedPlace.id,
-
-                name: selectedPlace.place_name,
-
-                address: selectedPlace.address_name || selectedPlace.road_address_name,
-
-                category: selectedPlace.category_group_name,
-
-                lat: selectedPlace.y,
-
-                lng: selectedPlace.x
-
-            };
-
-
-
-            const res = await fetch(`${API_URL}/bookmarks`, {
-
-                method: 'POST',
-
-                headers: { 
-
-                    'Content-Type': 'application/json',
-
-                    'Authorization': 'token'
-
-                },
-
-                body: JSON.stringify(body)
-
-            });
-
-            const data = await res.json();
-
-            alert(data.message);
-
-        } catch (e) { alert("로그인 후 이용 가능합니다."); }
-
-    }
-
-
-
-    async function postReview() {
-
-        const rating = document.getElementById('rating').value;
-
-        const comment = document.getElementById('comment').value;
-
-
-
-        try {
-
-            const session = await Auth.currentSession();
-
-            const token = session.getIdToken().getJwtToken();
-
-
-
-            const res = await fetch(`${API_URL}/reviews`, {
-
-                method: 'POST',
-
-                headers: { 
-
-                    'Content-Type': 'application/json',
-
-                    'Authorization': 'token'
-
-                },
-
-                body: JSON.stringify({
-
-                    place_id: selectedPlace.id,
-
-                    rating: parseInt(rating),
-
-                    comment: comment
-
-                })
-
-            });
-
-
-
-            if(res.ok) {
-
-                alert("리뷰 등록 완료!");
-
-                loadReviews(selectedPlace.id);
-
-            }
-
-        } catch (e) { alert("로그인 후 이용 가능합니다."); }
-
-    }
-
-
-
-    async function loadReviews(placeId) {
-
-        const listEl = document.getElementById('reviews-list');
-
-        let currentSub = "";
-
-        try {
-
-            const user = await Auth.currentAuthenticatedUser();
-
-            currentSub = user.attributes.sub;
-
-        } catch {}
-
-
-
-        try {
-
-            const res = await fetch(`${API_URL}/reviews?place_id=${placeId}`);
-
-            const reviews = await res.json();
-
-            listEl.innerHTML = '';
-
-            reviews.forEach(r => {
-
-                const div = document.createElement('div');
-
-                div.className = 'review-item';
-
-                const isMyReview = (r.user_id === currentSub);
-
-                div.innerHTML = `
-
-                    <strong>${r.user_email || '익명'}</strong> (⭐${r.rating})
-
-                    ${isMyReview ? `<span class="delete-btn" onclick="deleteReview('${r.review_id}')">삭제</span>` : ''}
-
-                    <br>${r.comment}
-
-                `;
-
-                listEl.appendChild(div);
-
-            });
-
-        } catch (e) { listEl.innerHTML = "리뷰가 없습니다."; }
-
-    }
-
-
-
-    async function deleteReview(reviewId) {
-
-        if(!confirm("삭제하시겠습니까?")) return;
-
-        try {
-
-            const session = await Auth.currentSession();
-
-            const token = session.getIdToken().getJwtToken();
-
-            const res = await fetch(`${API_URL}/reviews`, {
-
-                method: 'DELETE',
-
-                headers: { 
-
-                    'Content-Type': 'application/json',
-
-                    'Authorization': 'token'
-
-                },
-
-                body: JSON.stringify({ place_id: selectedPlace.id, review_id: reviewId })
-
-            });
-
-            if(res.ok) { alert("삭제 완료!"); loadReviews(selectedPlace.id); }
-
-        } catch (e) { alert("삭제 실패!"); }
-
-    }
-
-
-
-    async function loadRegisteredPlaces() {
-
-        try {
-
-            const res = await fetch(`${API_URL}/restaurants`);
-
-            const places = await res.json();
-
-            places.forEach(p => {
-
-                const marker = new kakao.maps.Marker({
-
-                    map: map,
-
-                    position: new kakao.maps.LatLng(p.lat, p.lng)
-
-                });
-
-                kakao.maps.event.addListener(marker, 'click', () => {
-
-                    selectPlace({ id: p.place_id, place_name: p.name, address_name: p.address, x: p.lng, y: p.lat });
-
-                });
-
-            });
-
-        } catch (e) { console.error(e); }
-
-    }
-
+    loadReviews(selectedPlace.place_id);
+
+  } catch (e) {
+    console.error(e);
+    alert("삭제 실패");
+  }
+}
+
+window.onload = () => {
+  initMap();
+  checkUser();
+};
 </script>
 
 </body>
-
 </html>

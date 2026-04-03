@@ -7,15 +7,20 @@ dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table('Reviews')
 
 def lambda_handler(event, context):
+
     headers = {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization'
     }
 
+    # ✅ CORS OPTIONS 처리
+    if event.get('requestContext', {}).get('http', {}).get('method') == 'OPTIONS':
+        return {'statusCode': 200, 'headers': headers}
+
     try:
-        # URL 파라미터에서 place_id를 읽어옵니다. (예: /reviews?place_id=12345)
-        query_params = event.get('queryStringParameters', {})
+        # ✅ None 방지
+        query_params = event.get('queryStringParameters') or {}
         place_id = query_params.get('place_id')
 
         if not place_id:
@@ -25,11 +30,23 @@ def lambda_handler(event, context):
                 'body': json.dumps({'error': 'place_id가 필요합니다.'})
             }
 
-        # 해당 식당의 리뷰만 쿼리해서 가져옵니다.
         response = table.query(
             KeyConditionExpression=Key('place_id').eq(place_id)
         )
-        reviews = response.get('Items', [])
+
+        items = response.get('Items', [])
+
+        # ✅ 프론트용 데이터 가공
+        reviews = []
+        for r in items:
+            reviews.append({
+                "place_id": r.get("place_id"),
+                "review_id": r.get("review_id"),
+                "user_id": r.get("user_id"),
+                "comment": r.get("comment"),
+                "rating": r.get("rating"),
+                "created_at": r.get("created_at")
+            })
 
         return {
             'statusCode': 200,
@@ -38,6 +55,7 @@ def lambda_handler(event, context):
         }
 
     except Exception as e:
+        print("ERROR:", e)
         return {
             'statusCode': 500,
             'headers': headers,
