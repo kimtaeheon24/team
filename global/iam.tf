@@ -46,7 +46,7 @@ resource "aws_iam_group_policy_attachment" "cicd_attach" {
   policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
 }
 
-# Developers (jenny, sam) → 최소 권한
+# Developers (jenny, sam) → 제한 권한
 resource "aws_iam_group_policy_attachment" "dev_s3" {
   group      = aws_iam_group.developers.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
@@ -98,44 +98,11 @@ resource "aws_iam_user_group_membership" "team_membership" {
   groups   = [aws_iam_group.developers.name]
 }
 
-# 6. Lambda 실행 역할
-resource "aws_iam_role" "lambda_exec_role" {
-  name = "map-project-lambda-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "lambda.amazonaws.com"
-        }
-      }
-    ]
-  })
-}
-
-# 최소 권한으로 변경
-resource "aws_iam_role_policy_attachment" "lambda_dynamodb" {
-  role       = aws_iam_role.lambda_exec_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess"
-}
-
-resource "aws_iam_role_policy_attachment" "lambda_logs" {
-  role       = aws_iam_role.lambda_exec_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
-}
-
-# 7. 출력
+# 6. 출력
 output "initial_passwords" {
   value = {
     for name, profile in aws_iam_user_login_profile.team_login :
     name => profile.password
   }
   sensitive = true
-}
-
-output "lambda_role_arn" {
-  value = aws_iam_role.lambda_exec_role.arn
 }
