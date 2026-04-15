@@ -32,7 +32,7 @@ resource "aws_lambda_function" "functions" {
   for_each      = toset(local.lambda_names)
   function_name = each.key
 
-  role    = aws_iam_role.lambda_role.arn
+  role = aws_iam_role.lambda_exec_role.arn
   handler = "${each.key}.lambda_handler"
   runtime = "python3.9"
 
