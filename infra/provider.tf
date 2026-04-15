@@ -6,7 +6,7 @@ terraform {
     key     = "infra/terraform.tfstate" # 금고 안의 파일 경로
     region  = "ap-northeast-2"
     encrypt = true
-    # dynamodb_table = "terraform-lock"         # 나중에 잠금 기능 쓸 때 주석 해제!
+    dynamodb_table = "terraform-lock"         # 나중에 잠금 기능 쓸 때 주석 해제!
   }
 
   required_providers {

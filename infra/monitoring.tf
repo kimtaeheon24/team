@@ -1,6 +1,4 @@
-# -------------------------------
 # Lambda: post_review 에러 알람
-# -------------------------------
 resource "aws_cloudwatch_metric_alarm" "lambda_errors_post_review" {
   alarm_name          = "lambda-post-review-errors"
   alarm_description   = "post_review Lambda error alarm"
@@ -18,9 +16,7 @@ resource "aws_cloudwatch_metric_alarm" "lambda_errors_post_review" {
   }
 }
 
-# -------------------------------
 # Lambda: post_review 실행시간 알람
-# -------------------------------
 resource "aws_cloudwatch_metric_alarm" "lambda_duration_post_review" {
   alarm_name          = "lambda-post-review-duration"
   alarm_description   = "post_review Lambda duration alarm"
@@ -38,9 +34,7 @@ resource "aws_cloudwatch_metric_alarm" "lambda_duration_post_review" {
   }
 }
 
-# -------------------------------
 # API Gateway 4xx 알람
-# -------------------------------
 resource "aws_cloudwatch_metric_alarm" "api_gateway_4xx" {
   alarm_name          = "api-gateway-4xx"
   alarm_description   = "API Gateway 4xx alarm"
@@ -58,9 +52,7 @@ resource "aws_cloudwatch_metric_alarm" "api_gateway_4xx" {
   }
 }
 
-# -------------------------------
 # API Gateway 5xx 알람
-# -------------------------------
 resource "aws_cloudwatch_metric_alarm" "api_gateway_5xx" {
   alarm_name          = "api-gateway-5xx"
   alarm_description   = "API Gateway 5xx alarm"
@@ -75,5 +67,23 @@ resource "aws_cloudwatch_metric_alarm" "api_gateway_5xx" {
 
   dimensions = {
     ApiId = aws_apigatewayv2_api.map_api.id
+  }
+}
+
+# Lambda: post_bookmark 에러 알람
+resource "aws_cloudwatch_metric_alarm" "lambda_errors_post_bookmark" {
+  alarm_name          = "lambda-post-bookmark-errors"
+  alarm_description   = "post_bookmark Lambda error alarm"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  threshold           = 1
+
+  namespace   = "AWS/Lambda"
+  metric_name = "Errors"
+  period      = 300
+  statistic   = "Sum"
+
+  dimensions = {
+    FunctionName = "post_bookmark"
   }
 }

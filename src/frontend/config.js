@@ -3,6 +3,6 @@ window.APP_CONFIG = {
     USER_POOL_ID: "ap-northeast-2_8DSMhz5sS",
     CLIENT_ID: "38tc2qq909p8dikgbgqivsjafp",
     AUTH_DOMAIN: "suhyeon-map-auth.auth.ap-northeast-2.amazoncognito.com",
-    REDIRECT_SIGN_IN:  "https://d28bqzc88yd66y.cloudfront.net/",
-    REDIRECT_SIGN_OUT: "https://d28bqzc88yd66y.cloudfront.net/"
+    REDIRECT_SIGN_IN:  "https://www.kimtaeheon.store/",
+    REDIRECT_SIGN_OUT: "https://www.kimtaeheon.store/"
 }; 

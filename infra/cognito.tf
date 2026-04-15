@@ -20,8 +20,8 @@ resource "aws_cognito_user_pool_client" "client" {
   supported_identity_providers = ["COGNITO"]
 
   # 🔥 여기 중요 (너 CloudFront 주소)
-  callback_urls = ["https://d28bqzc88yd66y.cloudfront.net/"]
-  logout_urls   = ["https://d28bqzc88yd66y.cloudfront.net/"]
+  callback_urls = ["https://www.kimtaeheon.store/"]
+  logout_urls   = ["https://www.kimtaeheon.store/"]
 
   # 🔥 핵심 설정 (이거 때문에 지금 문제였음)
   allowed_oauth_flows_user_pool_client = true

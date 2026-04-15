@@ -9,6 +9,8 @@ resource "aws_cloudfront_origin_access_control" "default" {
 
 # 2. CloudFront Distribution 설정
 resource "aws_cloudfront_distribution" "s3_distribution" {
+  aliases = ["www.kimtaeheon.store"]
+
   origin {
     domain_name              = aws_s3_bucket.frontend.bucket_regional_domain_name
     origin_id                = "S3-Frontend"
@@ -31,7 +33,7 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
       }
     }
 
-    viewer_protocol_policy = "redirect-to-https" # HTTP 접속 시 HTTPS로 강제 전환
+    viewer_protocol_policy = "redirect-to-https"
     min_ttl                = 0
     default_ttl            = 3600
     max_ttl                = 86400
@@ -44,7 +46,9 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
   }
 
   viewer_certificate {
-    cloudfront_default_certificate = true # 기본 제공 https 인증서 사용
+    acm_certificate_arn      = "arn:aws:acm:us-east-1:207258147798:certificate/ee83209d-3279-4abb-ace0-fafba89ccbc3"
+    ssl_support_method       = "sni-only"
+    minimum_protocol_version = "TLSv1.2_2021"
   }
 }
 
