@@ -8,7 +8,25 @@ resource "aws_dynamodb_table" "restaurants" {
     name = "place_id"
     type = "S"
   }
+
+  attribute {
+    name = "recommended_pk"
+    type = "S"
+  }
+
+  attribute {
+    name = "recommended_score"
+    type = "N"
+  }
+
+  global_secondary_index {
+    name            = "recommended_index"
+    hash_key        = "recommended_pk"
+    range_key       = "recommended_score"
+    projection_type = "ALL"
+  }
 }
+
 
 # 2. 북마크 테이블
 resource "aws_dynamodb_table" "bookmarks" {
