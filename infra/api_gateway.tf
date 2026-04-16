@@ -21,11 +21,11 @@ resource "aws_apigatewayv2_stage" "dev" {
 
 # 3. 람다 통합 (Integration)
 resource "aws_apigatewayv2_integration" "lambda_int" {
-  for_each = aws_lambda_function.functions
+  for_each = toset(local.lambda_names)
 
   api_id                 = aws_apigatewayv2_api.map_api.id
   integration_type       = "AWS_PROXY"
-  integration_uri        = each.value.invoke_arn
+  integration_uri        = aws_lambda_function.functions[each.key].invoke_arn
   payload_format_version = "2.0"
 }
 
@@ -66,12 +66,20 @@ resource "aws_apigatewayv2_route" "delete_review" {
   authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
 }
 
+resource "aws_apigatewayv2_route" "get_bookmarks" {
+  api_id             = aws_apigatewayv2_api.map_api.id
+  route_key          = "GET /bookmarks"
+  target             = "integrations/${aws_apigatewayv2_integration.lambda_int["get_my_bookmarks"].id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
+}
+
 # 5. 람다 호출 권한 부여
 resource "aws_lambda_permission" "apigw_lambda" {
-  for_each      = aws_lambda_function.functions
-  statement_id  = "AllowExecutionFromAPIGateway"
+  for_each      = toset(local.lambda_names)
+  statement_id  = "AllowExecutionFromAPIGateway-${each.key}"
   action        = "lambda:InvokeFunction"
-  function_name = each.value.function_name
+  function_name = aws_lambda_function.functions[each.key].function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.map_api.execution_arn}/*/*"
 }

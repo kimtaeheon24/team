@@ -27,7 +27,7 @@ resource "aws_iam_role_policy_attachment" "lambda_logs" {
 
 # 1. 사용할 람다 함수 이름들을 정의
 locals {
-  lambda_names = ["post_bookmark", "get_restaurants", "post_review", "get_reviews"]
+  lambda_names = ["post_bookmark", "get_restaurants", "post_review", "get_reviews", "get_my_bookmarks"]
 }
 
 # 2. [Layer용] 공통 유틸리티 폴더 압축
@@ -59,7 +59,7 @@ resource "aws_lambda_function" "functions" {
   for_each      = toset(local.lambda_names)
   function_name = each.key
 
-  role = aws_iam_role.lambda_exec_role.arn
+  role    = aws_iam_role.lambda_exec_role.arn
   handler = "${each.key}.lambda_handler"
   runtime = "python3.9"
 
