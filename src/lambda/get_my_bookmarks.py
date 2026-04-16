@@ -6,8 +6,11 @@ from boto3.dynamodb.conditions import Key
 
 dynamodb = boto3.resource('dynamodb')
 
-bookmark_table = dynamodb.Table(os.environ.get('BOOKMARK_TABLE', 'Bookmarks'))
-restaurant_table = dynamodb.Table(os.environ.get('RESTAURANT_TABLE', 'Restaurants'))
+bookmark_table_name = os.environ.get('BOOKMARK_TABLE', 'Bookmarks')
+restaurant_table_name = os.environ.get('RESTAURANT_TABLE', 'Restaurants')
+
+bookmark_table = dynamodb.Table(bookmark_table_name)
+restaurant_table = dynamodb.Table(restaurant_table_name)
 
 def lambda_handler(event, context):
     headers = {
@@ -39,7 +42,6 @@ def lambda_handler(event, context):
         )
         bookmark_items = response.get('Items', [])
 
-        # 북마크가 없으면 빈 배열 반환
         if not bookmark_items:
             return {
                 'statusCode': 200,
@@ -47,19 +49,41 @@ def lambda_handler(event, context):
                 'body': json.dumps([], ensure_ascii=False)
             }
 
-        # 2) place_id 기준으로 Restaurants 상세 조회
-        results = []
+        # 2) place_id 목록 추출
+        place_ids = [item['place_id'] for item in bookmark_items if item.get('place_id')]
 
+        if not place_ids:
+            return {
+                'statusCode': 200,
+                'headers': headers,
+                'body': json.dumps([], ensure_ascii=False)
+            }
+
+        # 3) BatchGetItem용 Key 목록 생성
+        keys = [{'place_id': pid} for pid in place_ids]
+
+        # 4) Restaurants 상세정보 일괄 조회
+        batch_response = dynamodb.batch_get_item(
+            RequestItems={
+                restaurant_table_name: {
+                    'Keys': keys
+                }
+            }
+        )
+
+        restaurant_items = batch_response.get('Responses', {}).get(restaurant_table_name, [])
+
+        # 5) place_id 기준으로 dict 변환
+        restaurant_map = {
+            item['place_id']: item for item in restaurant_items
+        }
+
+        results = []
         for bookmark in bookmark_items:
             place_id = bookmark.get('place_id')
             created_at = bookmark.get('created_at')
 
-            restaurant_res = restaurant_table.get_item(
-                Key={'place_id': place_id}
-            )
-            restaurant = restaurant_res.get('Item')
-
-            # Restaurants에 데이터가 있을 때만 합쳐서 반환
+            restaurant = restaurant_map.get(place_id)
             if restaurant:
                 results.append({
                     'place_id': restaurant.get('place_id'),
