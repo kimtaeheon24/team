@@ -8,8 +8,6 @@ resource "random_string" "suffix" {
   upper   = false
 }
 
-# ❌ (선택) OAC 쓸거면 website configuration은 없어도 됨
-# 일단 유지해도 되긴 함
 resource "aws_s3_bucket_website_configuration" "hosting" {
   bucket = aws_s3_bucket.frontend.id
 
@@ -18,7 +16,6 @@ resource "aws_s3_bucket_website_configuration" "hosting" {
   }
 }
 
-# ✅ 퍼블릭 완전 차단 (핵심🔥)
 resource "aws_s3_bucket_public_access_block" "frontend_block" {
   bucket = aws_s3_bucket.frontend.id
 
@@ -28,7 +25,6 @@ resource "aws_s3_bucket_public_access_block" "frontend_block" {
   restrict_public_buckets = true
 }
 
-# ✅ CloudFront만 접근 허용
 resource "aws_s3_bucket_policy" "allow_cloudfront" {
   depends_on = [aws_s3_bucket_public_access_block.frontend_block]
 
@@ -55,7 +51,6 @@ resource "aws_s3_bucket_policy" "allow_cloudfront" {
   })
 }
 
-# 프론트 파일 업로드
 resource "aws_s3_object" "index" {
   bucket       = aws_s3_bucket.frontend.id
   key          = "index.html"
@@ -65,9 +60,17 @@ resource "aws_s3_object" "index" {
 }
 
 resource "aws_s3_object" "config" {
-  bucket       = aws_s3_bucket.frontend.id
-  key          = "config.js"
-  source       = "${path.module}/../src/frontend/config.js"
-  etag         = filemd5("${path.module}/../src/frontend/config.js")
+  bucket = aws_s3_bucket.frontend.id
+  key    = "config.js"
+
+  content = templatefile("${path.module}/../src/frontend/config.js.tpl", {
+    api_url           = aws_apigatewayv2_stage.dev.invoke_url
+    user_pool_id      = aws_cognito_user_pool.pool.id
+    client_id         = aws_cognito_user_pool_client.client.id
+    auth_domain       = "${aws_cognito_user_pool_domain.main.domain}.auth.ap-northeast-2.amazoncognito.com"
+    redirect_sign_in  = "https://www.kimtaeheon.store/"
+    redirect_sign_out = "https://www.kimtaeheon.store/"
+  })
+
   content_type = "application/javascript"
 }

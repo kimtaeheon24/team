@@ -46,32 +46,13 @@ resource "aws_iam_group_policy_attachment" "cicd_attach" {
   policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
 }
 
-# Developers (jenny, sam) → 제한 권한
-resource "aws_iam_group_policy_attachment" "dev_s3" {
+# Developers (jenny, sam) → 임시 Full Access
+resource "aws_iam_group_policy_attachment" "dev_admin_attach" {
   group      = aws_iam_group.developers.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
 }
 
-resource "aws_iam_group_policy_attachment" "dev_lambda" {
-  group      = aws_iam_group.developers.name
-  policy_arn = "arn:aws:iam::aws:policy/AWSLambda_ReadOnlyAccess"
-}
-
-resource "aws_iam_group_policy_attachment" "dev_dynamodb" {
-  group      = aws_iam_group.developers.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonDynamoDBReadOnlyAccess"
-}
-
-resource "aws_iam_group_policy_attachment" "dev_apigw" {
-  group      = aws_iam_group.developers.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonAPIGatewayInvokeFullAccess"
-}
-
-resource "aws_iam_group_policy_attachment" "dev_cloudwatch" {
-  group      = aws_iam_group.developers.name
-  policy_arn = "arn:aws:iam::aws:policy/CloudWatchReadOnlyAccess"
-}
-
+# 비밀번호 변경 권한
 resource "aws_iam_group_policy_attachment" "dev_change_password" {
   group      = aws_iam_group.developers.name
   policy_arn = "arn:aws:iam::aws:policy/IAMUserChangePassword"
