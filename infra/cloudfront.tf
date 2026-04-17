@@ -9,7 +9,10 @@ resource "aws_cloudfront_origin_access_control" "default" {
 
 # 2. CloudFront Distribution 설정
 resource "aws_cloudfront_distribution" "s3_distribution" {
-  aliases = ["www.kimtaeheon.store"]
+  aliases = [
+    "kimtaeheon.store",
+    "www.kimtaeheon.store"
+  ]
 
   origin {
     domain_name              = aws_s3_bucket.frontend.bucket_regional_domain_name

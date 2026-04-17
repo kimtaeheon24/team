@@ -40,7 +40,7 @@ resource "aws_iam_group_policy_attachment" "admin_attach" {
   policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
 }
 
-# CI/CD (tina)
+# CI/CD (tina) → 임시 Full Access 유지
 resource "aws_iam_group_policy_attachment" "cicd_attach" {
   group      = aws_iam_group.cicd.name
   policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
@@ -85,7 +85,7 @@ resource "aws_iam_user_group_membership" "josh_membership" {
   groups = [aws_iam_group.admins.name]
 }
 
-# tina → cicd
+# tina → cicd (Full Access)
 resource "aws_iam_user_group_membership" "tina_membership" {
   user   = "tina"
   groups = [aws_iam_group.cicd.name]
