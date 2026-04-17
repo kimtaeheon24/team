@@ -1,0 +1,28 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: AWS 인증
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-2
+
+      - name: Lambda 배포
+        run: |
+          aws lambda update-function-code --function-name get_restaurants --zip-file fileb://src/lambda/get_restaurants.zip
+          aws lambda update-function-code --function-name get_reviews --zip-file fileb://src/lambda/get_reviews.zip
+          aws lambda update-function-code --function-name get_my_bookmarks --zip-file fileb://src/lambda/get_my_bookmarks.zip
+          aws lambda update-function-code --function-name post_review --zip-file fileb://src/lambda/post_review.zip
+          aws lambda update-function-code --function-name post_bookmark --zip-file fileb://src/lambda/post_bookmark.zip
