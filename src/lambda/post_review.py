@@ -24,7 +24,6 @@ def ensure_restaurant_exists(body):
     place_id = str(body.get('place_id'))
     name = body.get('name', '')
     address = body.get('address', '')
-    category = body.get('category', '')
     lat = body.get('lat')
     lng = body.get('lng')
 
@@ -35,7 +34,6 @@ def ensure_restaurant_exists(body):
         'place_id': place_id,
         'name': name,
         'address': address,
-        'category': category,
         'rating_sum': Decimal('0'),
         'rating_count': 0,
         'review_count': 0,

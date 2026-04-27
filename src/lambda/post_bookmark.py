@@ -86,7 +86,6 @@ def lambda_handler(event, context):
                 UpdateExpression="""
                     SET #name = :name,
                         address = :address,
-                        category = :category,
                         lat = :lat,
                         lng = :lng,
                         bookmark_count = if_not_exists(bookmark_count, :zero) + :one
@@ -98,7 +97,6 @@ def lambda_handler(event, context):
                 ExpressionAttributeValues={
                     ':name': body.get('name'),
                     ':address': body.get('address'),
-                    ':category': body.get('category'),
                     ':lat': body.get('lat'),
                     ':lng': body.get('lng'),
                     ':one': 1,
