@@ -17,6 +17,22 @@ resource "aws_apigatewayv2_stage" "dev" {
   api_id      = aws_apigatewayv2_api.map_api.id # 명칭 통일: map_api
   name        = "dev"
   auto_deploy = true # v2의 핵심 장점!
+
+  access_log_settings {
+    destination_arn = "arn:aws:logs:ap-northeast-2:207258147798:log-group:/aws/apigateway/map-api-access"
+    format = jsonencode({
+      requestId          = "$context.requestId"
+      routeKey           = "$context.routeKey"
+      status             = "$context.status"
+      responseLength     = "$context.responseLength"
+      integrationError   = "$context.integrationErrorMessage"
+      integrationLatency = "$context.integrationLatency"
+      ip                 = "$context.identity.sourceIp"
+
+
+      requestTime = "$context.requestTime"
+    })
+  }
 }
 
 # 3. 람다 통합 (Integration)

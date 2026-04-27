@@ -64,7 +64,7 @@ resource "aws_s3_object" "config" {
   key    = "config.js"
 
   content = templatefile("${path.module}/../src/frontend/config.js.tpl", {
-    api_url           = aws_apigatewayv2_stage.dev.invoke_url
+    api_url           = "https://www.kimtaeheon.store"
     user_pool_id      = aws_cognito_user_pool.pool.id
     client_id         = aws_cognito_user_pool_client.client.id
     auth_domain       = "${aws_cognito_user_pool_domain.main.domain}.auth.ap-northeast-2.amazoncognito.com"
